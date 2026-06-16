@@ -42,6 +42,7 @@ namespace CADdirektAdmin.API.Models
         public string? RESELLER_NAME { get; set; }
         public int? DAYSLEFT { get; set; }
         public DateTime? ExpiryDate { get; set; }
+        public int? SM_INCR { get; set; }
     }
 
     public class CustomerSearchCriteria
@@ -57,5 +58,7 @@ namespace CADdirektAdmin.API.Models
         public string[]? Products { get; set; } // Grouped checkbox checklist
         public bool HideTrial { get; set; } = false;
         public string? SearchText { get; set; }
+        public string[]? Versions { get; set; }
+        public int? Limit { get; set; } // Row limit
     }
 }

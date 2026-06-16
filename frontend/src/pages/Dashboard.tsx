@@ -17,8 +17,6 @@ import {
   LogOut, 
   Search, 
   Clock, 
-  CheckCircle, 
-  XCircle, 
   ChevronRight,
   ChevronLeft,
   Filter,
@@ -32,7 +30,9 @@ import {
   X,
   ArrowRight,
   ArrowLeft,
-  ChevronDown
+  ChevronDown,
+  Send,
+  Sparkles
 } from 'lucide-react';
 import { getAuthHeaders, removeSession, type UserSession } from '../utils/auth';
 
@@ -76,6 +76,7 @@ interface CustomerRow {
   reseller_NAME: string | null;
   daysleft: number | null;
   expiryDate: string | null;
+  sm_INCR: number | null;
 }
 
 interface LinkedLicenseRow {
@@ -137,6 +138,50 @@ const PRODUCT_MAPPINGS: Record<string, string> = {
 const CADDIREKT_PRODUCTS = ['9000', '6000', '5000', '7000', '9500', '6500', '5500', '1200', '1300'];
 const BLUEBEAM_PRODUCTS = ['1000', 'CDBL', 'CDBS', 'SCSB', 'CDVS', 'CDEP', 'CDEL'];
 
+export function getRowIncr(row: CustomerRow): number | null {
+  if (row.sm_INCR !== undefined && row.sm_INCR !== null && row.sm_INCR > 0) {
+    return row.sm_INCR;
+  }
+  
+  const serial = row.sm_SERIALNO;
+  if (!serial) return null;
+  
+  const parts = serial.split('-');
+  if (parts.length < 2) return null;
+  
+  const isBluebeam = 
+    (row.sm_APPLICATION && BLUEBEAM_PRODUCTS.includes(row.sm_APPLICATION)) ||
+    parts[1].toLowerCase().startsWith('r') ||
+    serial.toLowerCase().startsWith('sv') ||
+    serial.toLowerCase().startsWith('cde') ||
+    serial.toLowerCase().startsWith('cdv') ||
+    serial.toLowerCase().startsWith('cdb') ||
+    serial.toLowerCase().startsWith('scs') ||
+    serial.toLowerCase().startsWith('cdap') ||
+    serial.toLowerCase().startsWith('cdkg') ||
+    serial.toLowerCase().startsWith('cdta');
+    
+  let incrStr = '';
+  if (isBluebeam && parts.length >= 3) {
+    incrStr = parts[2];
+  } else {
+    incrStr = parts[1];
+  }
+  
+  const val = parseInt(incrStr, 10);
+  return isNaN(val) ? null : val;
+}
+
+export function getVersionCategory(incr: number | null): string {
+  if (incr === null) return 'Other';
+  if (incr >= 1000 && incr < 2000) return '1.x.y';
+  if (incr >= 2000 && incr < 3000) return '2.x.y';
+  if (incr >= 3000 && incr < 4000) return '3.x.y';
+  if (incr >= 4000 && incr < 5000) return '4.x.y';
+  if (incr >= 5000 && incr < 6000) return '5.x.y';
+  return 'Other';
+}
+
 export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'customers' | 'tree' | 'resellers' | 'restore' | 'deleted'>('customers');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -155,8 +200,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Version dropdown checkboxes
+  const [selectedVersions, setSelectedVersions] = useState<string[]>([]);
+  const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
+  const versionDropdownRef = useRef<HTMLDivElement>(null);
+
   // Simplified View state
   const [simplifiedView, setSimplifiedView] = useState(false);
+
+  // AI Search Assistant States
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiModel, setAiModel] = useState('qwen3:8b');
+  const [aiModelsList, setAiModelsList] = useState<string[]>(['qwen3:8b']);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [limit, setLimit] = useState<number | null>(null);
 
   // Data States
   const [customerData, setCustomerData] = useState<CustomerRow[]>([]);
@@ -239,6 +297,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setProductDropdownOpen(false);
       }
+      if (versionDropdownRef.current && !versionDropdownRef.current.contains(event.target as Node)) {
+        setVersionDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -298,7 +359,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
           withSmText,
           products: selectedProducts.length > 0 ? selectedProducts : null,
           hideTrial,
-          searchText: searchText || null
+          searchText: searchText || null,
+          versions: selectedVersions.length > 0 ? selectedVersions : null,
+          limit: limit || null
         })
       });
       if (response.status === 401) {
@@ -332,7 +395,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
           withSmText,
           products: selectedProducts.length > 0 ? selectedProducts : null,
           hideTrial,
-          searchText: searchText || null
+          searchText: searchText || null,
+          versions: selectedVersions.length > 0 ? selectedVersions : null
         })
       });
       if (!response.ok) throw new Error('Excel export failed');
@@ -918,8 +982,84 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     setSearchText('');
     setHideTrial(false);
     setSelectedProducts([]);
+    setSelectedVersions([]);
+    setLimit(null);
     setSimplifiedView(false);
+    setColumnFilters([]);
     alert('Search and grid layout filters have been reset to defaults.');
+  };
+
+  // Fetch available AI models from backend on mount
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/ai/models`, { headers: getAuthHeaders() });
+        if (res.ok) {
+          const list = await res.json();
+          setAiModelsList(list);
+          if (list.length > 0 && !list.includes(aiModel)) {
+            setAiModel(list[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load local models:", err);
+      }
+    };
+    fetchModels();
+  }, []);
+
+  const handleSendAiPrompt = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!aiPrompt.trim() || aiLoading) return;
+
+    setAiLoading(true);
+    setAiExplanation(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ai/parse-prompt`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          model: aiModel
+        })
+      });
+
+      if (res.status === 401) {
+        onLogout();
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error('AI parse failed');
+      }
+
+      const data = await res.json();
+      
+      // Update filters with response values
+      setRegistered(typeof data.registered === 'number' ? data.registered : 2);
+      setUpgraded(!!data.upgraded);
+      setDeactivated(!!data.deactivated);
+      setPerpetual(typeof data.perpetual === 'number' ? data.perpetual : -1);
+      setWithSmText(typeof data.withSmText === 'number' ? data.withSmText : -1);
+      
+      setSelectedProducts(Array.isArray(data.products) ? data.products : []);
+      setSelectedVersions(Array.isArray(data.versions) ? data.versions : []);
+      setLimit(typeof data.limit === 'number' ? data.limit : null);
+      setHideTrial(!!data.hideTrial);
+      setSearchText(data.searchText || '');
+      setAiExplanation(data.explanation || 'Search filters updated.');
+      
+      // Force search
+      handleSearch();
+    } catch (err) {
+      console.error(err);
+      setAiExplanation('Error calling AI assistant: ' + (err as Error).message);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -938,7 +1078,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     } else if (activeTab === 'deleted') {
       handleLoadDeletedHistory();
     }
-  }, [activeTab, treeWithTest]);
+  }, [activeTab, treeWithTest, registered, upgraded, deactivated, perpetual, withSmText, selectedProducts, selectedVersions, hideTrial, limit]);
 
   // Table Columns Definition
   const columnHelper = createColumnHelper<CustomerRow>();
@@ -946,7 +1086,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     const allCols = [
       columnHelper.accessor('sm_SERIALNO', {
         header: 'Serial Key',
-        cell: info => <span className="font-semibold" style={{ color: 'var(--accent-blue)' }}>{info.getValue()}</span>
+        cell: info => <span className="font-semibold hover:underline" style={{ color: 'var(--accent-blue)', cursor: 'pointer' }}>{info.getValue()}</span>
       }),
       columnHelper.accessor('sm_ISACTIVE', {
         header: 'Status',
@@ -1016,9 +1156,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     return allCols;
   }, [simplifiedView, resellers]);
 
+  const filteredCustomerData = useMemo(() => {
+    if (selectedVersions.length === 0) {
+      return customerData;
+    }
+    return customerData.filter(row => {
+      const incr = getRowIncr(row);
+      const cat = getVersionCategory(incr);
+      return selectedVersions.includes(cat);
+    });
+  }, [customerData, selectedVersions]);
+
   // Table Instance Setup
   const table = useReactTable({
-    data: customerData,
+    data: filteredCustomerData,
     columns,
     state: { sorting, columnFilters },
     onSortingChange: setSorting,
@@ -1034,15 +1185,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     }
   });
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    const total = customerData.length;
-    const active = customerData.filter(r => r.sm_ISACTIVE === 'Active').length;
-    const deactivated = total - active;
-    const expiringSoon = customerData.filter(r => r.daysleft !== null && r.daysleft >= 0 && r.daysleft <= 30).length;
-
-    return { total, active, deactivated, expiringSoon };
-  }, [customerData]);
 
   // Nested License Tree View
   const treeNodes = useMemo(() => {
@@ -1377,137 +1519,329 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
             {/* Filters Dashboard Grid */}
             <section className="card" style={{ padding: '1.25rem', marginBottom: '1.25rem' }}>
-              <div className="grid" style={{
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '1rem',
-                marginBottom: '1rem'
-              }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Registration Status</label>
-                  <select className="form-input" value={registered} onChange={e => setRegistered(Number(e.target.value))}>
-                    <option value={2}>Both</option>
-                    <option value={1}>Registered Only</option>
-                    <option value={0}>Unregistered Only</option>
-                  </select>
+              <div className="flex gap-6 flex-wrap md:flex-nowrap" style={{ marginBottom: '1rem' }}>
+                {/* Traditional Filters (Left) */}
+                <div className="grid" style={{
+                  flex: '1 1 70%',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: '1rem',
+                  alignContent: 'start'
+                }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Registration Status</label>
+                    <select className="form-input" value={registered} onChange={e => setRegistered(Number(e.target.value))}>
+                      <option value={2}>Both</option>
+                      <option value={1}>Registered Only</option>
+                      <option value={0}>Unregistered Only</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Active Status</label>
+                    <label className="flex items-center gap-1 cursor-pointer" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                      <input type="checkbox" checked={deactivated} onChange={e => setDeactivated(e.target.checked)} />
+                      Include Deactivated
+                    </label>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>License Model</label>
+                    <select className="form-input" value={perpetual} onChange={e => setPerpetual(Number(e.target.value))}>
+                      <option value={-1}>All Types</option>
+                      <option value={1}>Perpetual</option>
+                      <option value={0}>Subscription</option>
+                    </select>
+                  </div>
+
+                  {/* Grouped Checked Product List Dropdown */}
+                  <div style={{ position: 'relative' }} ref={dropdownRef}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Product Filter</label>
+                    <button 
+                      type="button" 
+                      className="form-input flex justify-between items-center text-left" 
+                      onClick={() => setProductDropdownOpen(!productDropdownOpen)}
+                      style={{ fontSize: '0.85rem', cursor: 'pointer' }}
+                    >
+                      <span>
+                        {selectedProducts.length === 0 
+                          ? 'All Products' 
+                          : `${selectedProducts.length} Selected`}
+                      </span>
+                      <ChevronDown size={14} />
+                    </button>
+
+                    {productDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        boxShadow: 'var(--shadow-premium)',
+                        zIndex: 200,
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        padding: '0.75rem'
+                      }}>
+                        {/* CADdirekt Group */}
+                        <div style={{ marginBottom: '0.75rem' }}>
+                          <div className="flex justify-between items-center" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>CADdirekt Products</span>
+                            <div className="flex gap-2" style={{ fontSize: '0.65rem' }}>
+                              <button type="button" onClick={() => selectAllGroup('caddirekt')} className="text-blue-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>All</button>
+                              <button type="button" onClick={() => clearAllGroup('caddirekt')} className="text-gray-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {CADDIREKT_PRODUCTS.map(code => (
+                              <label key={code} className="flex items-center gap-2" style={{ fontSize: '0.75rem', cursor: 'pointer' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedProducts.includes(code)} 
+                                  onChange={() => handleToggleProductChecked(code)} 
+                                />
+                                {PRODUCT_MAPPINGS[code] || code}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Bluebeam Group */}
+                        <div>
+                          <div className="flex justify-between items-center" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>Bluebeam / Add-on</span>
+                            <div className="flex gap-2" style={{ fontSize: '0.65rem' }}>
+                              <button type="button" onClick={() => selectAllGroup('bluebeam')} className="text-blue-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>All</button>
+                              <button type="button" onClick={() => clearAllGroup('bluebeam')} className="text-gray-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {BLUEBEAM_PRODUCTS.map(code => (
+                              <label key={code} className="flex items-center gap-2" style={{ fontSize: '0.75rem', cursor: 'pointer' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedProducts.includes(code)} 
+                                  onChange={() => handleToggleProductChecked(code)} 
+                                />
+                                {PRODUCT_MAPPINGS[code] || code}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Grouped Version List Dropdown */}
+                  <div style={{ position: 'relative' }} ref={versionDropdownRef}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Version Filter</label>
+                    <button 
+                      type="button" 
+                      className="form-input flex justify-between items-center text-left" 
+                      onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+                      style={{ fontSize: '0.85rem', cursor: 'pointer' }}
+                    >
+                      <span>
+                        {selectedVersions.length === 0 
+                          ? 'All Versions' 
+                          : `${selectedVersions.length} Selected`}
+                      </span>
+                      <ChevronDown size={14} />
+                    </button>
+
+                    {versionDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        boxShadow: 'var(--shadow-premium)',
+                        zIndex: 200,
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        padding: '0.75rem'
+                      }}>
+                        <div className="flex justify-between items-center" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>Select Versions</span>
+                          <div className="flex gap-2" style={{ fontSize: '0.65rem' }}>
+                            <button type="button" onClick={() => setSelectedVersions(['1.x.y', '2.x.y', '3.x.y', '4.x.y', '5.x.y', 'Other'])} className="text-blue-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>All</button>
+                            <button type="button" onClick={() => setSelectedVersions([])} className="text-gray-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {[
+                            { code: '1.x.y', label: '1.x.y' },
+                            { code: '2.x.y', label: '2.x.y' },
+                            { code: '3.x.y', label: '3.x.y' },
+                            { code: '4.x.y', label: '4.x.y' },
+                            { code: '5.x.y', label: '5.x.y' },
+                            { code: 'Other', label: 'Other' }
+                          ].map(v => (
+                            <label key={v.code} className="flex items-center gap-2" style={{ fontSize: '0.75rem', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={selectedVersions.includes(v.code)} 
+                                onChange={() => {
+                                  setSelectedVersions(prev => 
+                                    prev.includes(v.code) ? prev.filter(x => x !== v.code) : [...prev, v.code]
+                                  );
+                                }} 
+                              />
+                              {v.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Text Search</label>
+                    <div className="flex items-center" style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={searchText}
+                        onChange={e => setSearchText(e.target.value)}
+                        placeholder="Search key, name, email..."
+                        style={{ paddingRight: '2.5rem' }}
+                      />
+                      <Search size={14} style={{ position: 'absolute', right: '0.75rem', color: 'var(--text-muted)' }} />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Active Status</label>
-                  <label className="flex items-center gap-1 cursor-pointer" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                    <input type="checkbox" checked={deactivated} onChange={e => setDeactivated(e.target.checked)} />
-                    Include Deactivated
-                  </label>
-                </div>
+                {/* AI Search Assistant (Right) */}
+                <div style={{
+                  flex: '1 1 30%',
+                  minWidth: '280px',
+                  borderLeft: '1px solid var(--border-color)',
+                  paddingLeft: '1.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.6rem'
+                }}>
+                  <div className="flex items-center justify-between" style={{ marginBottom: '0.2rem' }}>
+                    <label className="flex items-center gap-1.5 font-semibold" style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <Sparkles size={14} style={{ color: '#eab308' }} />
+                      AI Assistant
+                    </label>
+                    <select 
+                      value={aiModel} 
+                      onChange={e => setAiModel(e.target.value)}
+                      style={{
+                        fontSize: '0.7rem',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: '#f8fafc',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    >
+                      {aiModelsList.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <form onSubmit={handleSendAiPrompt} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative' }}>
+                    <textarea
+                      className="form-input"
+                      value={aiPrompt}
+                      onChange={e => setAiPrompt(e.target.value)}
+                      placeholder="e.g. Show active perpetual keys for CADdirekt EL"
+                      rows={2}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendAiPrompt();
+                        }
+                      }}
+                      style={{
+                        fontSize: '0.85rem',
+                        resize: 'none',
+                        paddingRight: '2.5rem',
+                        borderRadius: '8px',
+                        borderColor: aiLoading ? 'var(--accent-blue)' : 'var(--border-color)',
+                        minHeight: '60px'
+                      }}
+                      disabled={aiLoading}
+                    />
+                    <button
+                      type="submit"
+                      disabled={aiLoading || !aiPrompt.trim()}
+                      style={{
+                        position: 'absolute',
+                        right: '0.6rem',
+                        bottom: '0.6rem',
+                        background: 'none',
+                        border: 'none',
+                        cursor: aiPrompt.trim() && !aiLoading ? 'pointer' : 'default',
+                        color: aiPrompt.trim() && !aiLoading ? 'var(--accent-blue)' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'color 0.2s',
+                        padding: '4px'
+                      }}
+                    >
+                      <Send size={14} />
+                    </button>
+                  </form>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>License Model</label>
-                  <select className="form-input" value={perpetual} onChange={e => setPerpetual(Number(e.target.value))}>
-                    <option value={-1}>All Types</option>
-                    <option value={1}>Perpetual</option>
-                    <option value={0}>Subscription</option>
-                  </select>
-                </div>
-
-                {/* Grouped Checked Product List Dropdown */}
-                <div style={{ position: 'relative' }} ref={dropdownRef}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Product Filter</label>
-                  <button 
-                    type="button" 
-                    className="form-input flex justify-between items-center text-left" 
-                    onClick={() => setProductDropdownOpen(!productDropdownOpen)}
-                    style={{ fontSize: '0.85rem', cursor: 'pointer' }}
-                  >
-                    <span>
-                      {selectedProducts.length === 0 
-                        ? 'All Products' 
-                        : `${selectedProducts.length} Selected`}
-                    </span>
-                    <ChevronDown size={14} />
-                  </button>
-
-                  {productDropdownOpen && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      right: 0,
-                      backgroundColor: '#ffffff',
-                      border: '1px solid var(--border-color)',
+                  {aiLoading && (
+                    <div className="animate-pulse" style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--accent-blue)',
+                      backgroundColor: 'var(--accent-light)',
+                      padding: '0.55rem 0.75rem',
                       borderRadius: '6px',
-                      boxShadow: 'var(--shadow-premium)',
-                      zIndex: 200,
-                      maxHeight: '300px',
-                      overflowY: 'auto',
-                      padding: '0.75rem'
+                      borderLeft: '3px solid var(--accent-blue)',
+                      marginTop: '0.2rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      lineHeight: '1.3'
                     }}>
-                      {/* CADdirekt Group */}
-                      <div style={{ marginBottom: '0.75rem' }}>
-                        <div className="flex justify-between items-center" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>CADdirekt Products</span>
-                          <div className="flex gap-2" style={{ fontSize: '0.65rem' }}>
-                            <button type="button" onClick={() => selectAllGroup('caddirekt')} className="text-blue-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>All</button>
-                            <button type="button" onClick={() => clearAllGroup('caddirekt')} className="text-gray-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          {CADDIREKT_PRODUCTS.map(code => (
-                            <label key={code} className="flex items-center gap-2" style={{ fontSize: '0.75rem', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={selectedProducts.includes(code)} 
-                                onChange={() => handleToggleProductChecked(code)} 
-                              />
-                              {PRODUCT_MAPPINGS[code] || code}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Bluebeam Group */}
-                      <div>
-                        <div className="flex justify-between items-center" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>Bluebeam / Add-on</span>
-                          <div className="flex gap-2" style={{ fontSize: '0.65rem' }}>
-                            <button type="button" onClick={() => selectAllGroup('bluebeam')} className="text-blue-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>All</button>
-                            <button type="button" onClick={() => clearAllGroup('bluebeam')} className="text-gray-500 hover:underline" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          {BLUEBEAM_PRODUCTS.map(code => (
-                            <label key={code} className="flex items-center gap-2" style={{ fontSize: '0.75rem', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={selectedProducts.includes(code)} 
-                                onChange={() => handleToggleProductChecked(code)} 
-                              />
-                              {PRODUCT_MAPPINGS[code] || code}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
+                      <span className="animate-spin" style={{
+                        width: '10px',
+                        height: '10px',
+                        border: '2px solid var(--accent-blue)',
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        display: 'inline-block'
+                      }} />
+                      <span>AI is thinking & analyzing... (this takes 1-2 minutes on CPU)</span>
                     </div>
                   )}
-                </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Text Search</label>
-                  <div className="flex items-center" style={{ position: 'relative' }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={searchText}
-                      onChange={e => setSearchText(e.target.value)}
-                      placeholder="Search key, name, email..."
-                      style={{ paddingRight: '2.5rem' }}
-                    />
-                    <Search size={14} style={{ position: 'absolute', right: '0.75rem', color: 'var(--text-muted)' }} />
-                  </div>
+                  {aiExplanation && (
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--text-secondary)',
+                      backgroundColor: '#f1f5f9',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      borderLeft: '3px solid var(--accent-blue)',
+                      marginTop: '0.2rem',
+                      lineHeight: '1.3'
+                    }}>
+                      {aiExplanation}
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Extra Layout Filters */}
               <div className="flex justify-between items-center" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem', fontSize: '0.85rem' }}>
-                <div className="flex gap-4">
+                <div className="flex gap-4" style={{ alignItems: 'center' }}>
                   <label className="flex items-center gap-1 cursor-pointer font-semibold">
                     <input type="checkbox" checked={simplifiedView} onChange={e => setSimplifiedView(e.target.checked)} />
                     Simplified View
@@ -1520,6 +1854,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     <input type="checkbox" checked={upgraded} onChange={e => setUpgraded(e.target.checked)} />
                     Upgraded Chains Only
                   </label>
+                  {limit && (
+                    <span style={{
+                      backgroundColor: 'var(--accent-blue)',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'default'
+                    }}>
+                      Top {limit} Rows
+                      <span 
+                        onClick={() => setLimit(null)} 
+                        style={{ cursor: 'pointer', fontSize: '0.8rem', marginLeft: '2px', opacity: 0.8 }}
+                        title="Clear Limit"
+                      >
+                        ✕
+                      </span>
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={handleResetLayoutSettings} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
@@ -1532,54 +1889,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               </div>
             </section>
 
-            {/* Performance Stats */}
-            <section className="grid" style={{
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '1rem',
-              marginBottom: '1.25rem'
-            }}>
-              <div className="card flex items-center gap-4" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ backgroundColor: 'var(--accent-light)', color: 'var(--accent-blue)', padding: '0.4rem', borderRadius: '6px' }}>
-                  <Key size={16} />
-                </div>
-                <div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Keys Matched</p>
-                  <h4 style={{ margin: 0 }}>{stats.total}</h4>
-                </div>
-              </div>
-              <div className="card flex items-center gap-4" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--status-active)', padding: '0.4rem', borderRadius: '6px' }}>
-                  <CheckCircle size={16} />
-                </div>
-                <div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Active</p>
-                  <h4 style={{ margin: 0 }}>{stats.active}</h4>
-                </div>
-              </div>
-              <div className="card flex items-center gap-4" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--status-inactive)', padding: '0.4rem', borderRadius: '6px' }}>
-                  <XCircle size={16} />
-                </div>
-                <div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Deactivated</p>
-                  <h4 style={{ margin: 0 }}>{stats.deactivated}</h4>
-                </div>
-              </div>
-              <div className="card flex items-center gap-4" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--status-warning)', padding: '0.4rem', borderRadius: '6px' }}>
-                  <Clock size={16} />
-                </div>
-                <div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Expiring Soon (≤30d)</p>
-                  <h4 style={{ margin: 0 }}>{stats.expiringSoon}</h4>
-                </div>
-              </div>
-            </section>
 
-            {/* Split Workspace */}
+
+            {/* Full-width Workspace */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: selectedRow ? '3fr 2fr' : '1fr',
+              gridTemplateColumns: '1fr',
               gap: '1.25rem',
               alignItems: 'start',
               flex: 1
@@ -1750,9 +2065,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               </div>
             </div>
 
-              {/* Selected Customer Details */}
+              {/* License Details Modal */}
               {selectedRow && (
-                <div className="card flex-col" style={{ display: 'flex', gap: '1.25rem', position: 'sticky', top: '10px', maxHeight: '85vh', overflowY: 'auto' }}>
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(15, 23, 42, 0.4)',
+                  backdropFilter: 'blur(4px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 400
+                }} onClick={() => setSelectedRow(null)}>
+                  <div className="card flex-col" style={{
+                    width: '650px',
+                    maxHeight: '90vh',
+                    overflowY: 'auto',
+                    backgroundColor: '#ffffff',
+                    display: 'flex',
+                    gap: '1.25rem',
+                    padding: '1.5rem',
+                    boxShadow: 'var(--shadow-premium)'
+                  }} onClick={e => e.stopPropagation()}>
                   <div className="flex justify-between items-center" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                     <div>
                       <h4 style={{ margin: 0 }}>License details</h4>
@@ -2050,7 +2387,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
             </div>
           </>
         )}

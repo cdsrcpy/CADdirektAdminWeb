@@ -27,21 +27,36 @@ namespace CADdirektAdmin.API.Controllers
                    ?? "Data Source=103.14.120.147,34569;Initial Catalog=msdirekt;User ID=dokum_sa;Password=@bjectARX1$;TrustServerCertificate=True;";
         }
 
-        private string BuildSearchQuery(CustomerSearchCriteria criteria, DynamicParameters parameters)
+        private string BuildSearchQuery(CustomerSearchCriteria criteria, DynamicParameters parameters, bool isExport = false)
         {
             var builder = new StringBuilder();
             
-            // Limit results for performance when no specific search text is provided
+            // Limit results for performance when no specific search text/filter is provided
             string topClause = "";
-            if (string.IsNullOrEmpty(criteria.SearchText))
+            if (!isExport)
             {
-                topClause = "TOP 200";
+                if (criteria.Limit.HasValue && criteria.Limit.Value > 0)
+                {
+                    topClause = $"TOP {criteria.Limit.Value}";
+                }
+                else
+                {
+                    bool hasFilter = !string.IsNullOrEmpty(criteria.SearchText) ||
+                                     (criteria.Products != null && criteria.Products.Length > 0) ||
+                                     !string.IsNullOrEmpty(criteria.ApplicationModule) ||
+                                     (criteria.Versions != null && criteria.Versions.Length > 0);
+
+                    if (!hasFilter)
+                    {
+                        topClause = "TOP 200";
+                    }
+                }
             }
 
             builder.Append($@"
 select ROW_NUMBER() OVER (ORDER BY q.SM_SERIALNO) RowNum,* from ( 
 select {topClause}
-s.SM_ID, s.SM_TEXT, s.SM_SERIALNO,
+s.SM_ID, s.SM_TEXT, s.SM_SERIALNO, s.SM_INCR,
 (SELECT min(sl_id) FROM [dbo].[SERIALKEYMASTERLINK] WHERE SM_ID_OLD = s.SM_ID) UPGRADED,
 (SELECT min(sl_id) FROM [dbo].[SERIALKEYMASTERLINK] WHERE SM_ID_NEW = s.SM_ID) UPGRADED2xy,
 (SELECT min(sl_id) FROM [dbo].[SERIALKEYMASTERLINK] WHERE SM_ID_NEW3 = s.SM_ID) UPGRADED3xy,
@@ -148,12 +163,49 @@ FROM [dbo].[CustomerDetail] c RIGHT JOIN [dbo].[SerialKeyMaster] s ON s.SM_ID = 
                 parameters.Add("@SearchText", $"%{criteria.SearchText}%");
             }
 
+            // 9. Version Filter
+            if (criteria.Versions != null && criteria.Versions.Length > 0)
+            {
+                var versionConditions = new List<string>();
+                foreach (var version in criteria.Versions)
+                {
+                    if (version == "1.x.y")
+                    {
+                        versionConditions.Add("(s.SM_INCR >= 1000 AND s.SM_INCR < 2000)");
+                    }
+                    else if (version == "2.x.y")
+                    {
+                        versionConditions.Add("(s.SM_INCR >= 2000 AND s.SM_INCR < 3000)");
+                    }
+                    else if (version == "3.x.y")
+                    {
+                        versionConditions.Add("(s.SM_INCR >= 3000 AND s.SM_INCR < 4000)");
+                    }
+                    else if (version == "4.x.y")
+                    {
+                        versionConditions.Add("(s.SM_INCR >= 4000 AND s.SM_INCR < 5000)");
+                    }
+                    else if (version == "5.x.y")
+                    {
+                        versionConditions.Add("(s.SM_INCR >= 5000 AND s.SM_INCR < 6000)");
+                    }
+                    else if (version == "Other")
+                    {
+                        versionConditions.Add("(s.SM_INCR is null or s.SM_INCR < 1000 or s.SM_INCR >= 6000)");
+                    }
+                }
+                if (versionConditions.Count > 0)
+                {
+                    conditions.Add("(" + string.Join(" OR ", versionConditions) + ")");
+                }
+            }
+
             if (conditions.Count > 0)
             {
                 builder.Append(" WHERE " + string.Join(" AND ", conditions));
             }
 
-            if (string.IsNullOrEmpty(criteria.SearchText))
+            if (!string.IsNullOrEmpty(topClause))
             {
                 builder.Append(" ORDER BY s.SM_SERIALNO ASC ");
             }
@@ -171,7 +223,7 @@ FROM [dbo].[CustomerDetail] c RIGHT JOIN [dbo].[SerialKeyMaster] s ON s.SM_ID = 
             {
                 using var connection = new SqlConnection(GetConnectionString());
                 var parameters = new DynamicParameters();
-                string sql = BuildSearchQuery(criteria, parameters);
+                string sql = BuildSearchQuery(criteria, parameters, isExport: false);
 
                 var results = await connection.QueryAsync<CustomerRow>(sql, parameters);
                 return Ok(results);
@@ -189,7 +241,7 @@ FROM [dbo].[CustomerDetail] c RIGHT JOIN [dbo].[SerialKeyMaster] s ON s.SM_ID = 
             {
                 using var connection = new SqlConnection(GetConnectionString());
                 var parameters = new DynamicParameters();
-                string sql = BuildSearchQuery(criteria, parameters);
+                string sql = BuildSearchQuery(criteria, parameters, isExport: true);
 
                 var results = (await connection.QueryAsync<CustomerRow>(sql, parameters)).ToList();
 
