@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Data Source=103.14.120.147,34569;Initial Catalog=msdirekt;User ID=dokum_sa;Password=@bjectARX1$;
+      - ASPNETCORE_ENVIRONMENT=Development
+    restart: always
+
+  frontend-ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-api
+    restart: always
