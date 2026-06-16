@@ -51,6 +51,14 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+// Request logging middleware
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"[API Server Log] Received request: {context.Request.Method} {context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString} on port {context.Connection.LocalPort}");
+    await next();
+    Console.WriteLine($"[API Server Log] Responded with status code: {context.Response.StatusCode} for {context.Request.Method} {context.Request.Path}");
+});
+
 // Configure HTTP Request Pipeline
 if (app.Environment.IsDevelopment())
 {
