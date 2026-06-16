@@ -5,7 +5,11 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Services
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = new CustomJsonNamingPolicy();
+    });
 builder.Services.AddOpenApi();
 
 // Configure CORS
@@ -61,3 +65,45 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public class CustomJsonNamingPolicy : System.Text.Json.JsonNamingPolicy
+{
+    public override string ConvertName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+
+        if (name.StartsWith("SM_"))
+        {
+            return "sm_" + name.Substring(3);
+        }
+        if (name.StartsWith("CD_"))
+        {
+            return "cd_" + name.Substring(3);
+        }
+        if (name.StartsWith("SD_"))
+        {
+            return "sD_" + name.Substring(3);
+        }
+        if (name == "USER_STATUS")
+        {
+            return "user_STATUS";
+        }
+        if (name == "RESELLER_NAME")
+        {
+            return "reseller_NAME";
+        }
+        if (name == "UPGRADED_SERIALNO")
+        {
+            return "upgraded_SERIALNO";
+        }
+        
+        // Convert all-uppercase words (like DAYSLEFT, SDDAYS, MINDATE, MAXDATE, RESELLER) to lowercase
+        if (name.All(c => char.IsUpper(c) || char.IsDigit(c) || c == '_'))
+        {
+            return name.ToLowerInvariant();
+        }
+
+        // Default to camelCase for properties like ExpiryDate, etc.
+        return System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(name);
+    }
+}

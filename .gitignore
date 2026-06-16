@@ -1,0 +1,39 @@
+# .gitignore
+
+# Build directories
+[Bb]in/
+[Oo]bj/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# User-specific files
+*.user
+*.userosscache
+*.sln.docstates
+
+# IDE files
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Node dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Playwright test reports
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Local configuration files
+appsettings.Development.json
+*.lic
+*.log
