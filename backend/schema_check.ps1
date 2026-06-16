@@ -1,4 +1,4 @@
-$connectionString = "Data Source=103.14.120.147,34569;Initial Catalog=msdirekt;User ID=dokum_sa;Password=@bjectARX1$;TrustServerCertificate=True;"
+$connectionString = "Data Source=host;Initial Catalog=db;User ID=sa;Password=pwd;TrustServerCertificate=True;"
 $conn = New-Object System.Data.SqlClient.SqlConnection($connectionString)
 $conn.Open()
 $cmd = $conn.CreateCommand()
