@@ -17,6 +17,7 @@ import {
   CheckCircle, 
   XCircle, 
   ChevronRight,
+  ChevronLeft,
   MessageSquare,
   Building2,
   Trash2,
@@ -134,6 +135,7 @@ const BLUEBEAM_PRODUCTS = ['1000', 'CDBL', 'CDBS', 'SCSB', 'CDVS', 'CDEP', 'CDEL
 
 export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'customers' | 'tree' | 'resellers' | 'restore' | 'deleted'>('customers');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Search Filter States
   const [registered, setRegistered] = useState<number>(2); // 2 = Both, 1 = Registered, 0 = Unregistered
@@ -1094,7 +1096,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   }, [session]);
 
   return (
-    <div className="layout-container">
+    <div className="layout-container" style={{ gridTemplateColumns: sidebarCollapsed ? '70px 1fr' : '240px 1fr', transition: 'grid-template-columns 0.3s ease' }}>
       {/* Sidebar Navigation */}
       <aside style={{
         backgroundColor: '#ffffff',
@@ -1102,25 +1104,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        padding: '1.25rem'
+        padding: sidebarCollapsed ? '1.25rem 0.5rem' : '1.25rem',
+        transition: 'padding 0.3s ease',
+        position: 'relative'
       }}>
         <div>
-          <div className="flex items-center gap-2" style={{ marginBottom: '1.5rem' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              backgroundColor: 'var(--accent-blue)',
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              fontWeight: 800
-            }}>CD</div>
-            <div>
-              <h3 style={{ fontSize: '1.05rem', margin: 0, color: 'var(--accent-blue)' }}>CADdirekt</h3>
-              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Admin console</p>
+          <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', gap: '0.5rem' }}>
+            <div className="flex items-center gap-2">
+              <div style={{
+                width: '32px',
+                height: '32px',
+                backgroundColor: 'var(--accent-blue)',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: 800,
+                flexShrink: 0
+              }}>CD</div>
+              {!sidebarCollapsed && (
+                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <h3 style={{ fontSize: '1.05rem', margin: 0, color: 'var(--accent-blue)' }}>CADdirekt</h3>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', margin: 0 }}>Admin console</p>
+                </div>
+              )}
             </div>
+            <button 
+              type="button"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="btn-secondary flex items-center justify-center"
+              style={{
+                width: '24px',
+                height: '24px',
+                padding: 0,
+                borderRadius: '50%',
+                border: '1px solid var(--border-color)',
+                cursor: 'pointer',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                flexShrink: 0
+              }}
+              title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
           </div>
 
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -1134,12 +1162,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 padding: '0.65rem 0.8rem',
                 borderRadius: '8px',
                 fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer'
+                textAlign: sidebarCollapsed ? 'center' : 'left',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
+              title="Customer Grid"
             >
-              <Users size={16} />
-              Customer Grid
+              <Users size={16} style={{ flexShrink: 0 }} />
+              {!sidebarCollapsed && <span>Customer Grid</span>}
             </button>
 
             <button
@@ -1152,12 +1183,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 padding: '0.65rem 0.8rem',
                 borderRadius: '8px',
                 fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer'
+                textAlign: sidebarCollapsed ? 'center' : 'left',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
+              title="Linked Keys Tree"
             >
-              <Link2 size={16} />
-              Linked Keys Tree
+              <Link2 size={16} style={{ flexShrink: 0 }} />
+              {!sidebarCollapsed && <span>Linked Keys Tree</span>}
             </button>
 
             <button
@@ -1170,12 +1204,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 padding: '0.65rem 0.8rem',
                 borderRadius: '8px',
                 fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer'
+                textAlign: sidebarCollapsed ? 'center' : 'left',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
+              title="Resellers List"
             >
-              <Building2 size={16} />
-              Resellers List
+              <Building2 size={16} style={{ flexShrink: 0 }} />
+              {!sidebarCollapsed && <span>Resellers List</span>}
             </button>
 
             <button
@@ -1188,12 +1225,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 padding: '0.65rem 0.8rem',
                 borderRadius: '8px',
                 fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer'
+                textAlign: sidebarCollapsed ? 'center' : 'left',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
+              title="Restore Keys"
             >
-              <Key size={16} />
-              Restore Keys
+              <Key size={16} style={{ flexShrink: 0 }} />
+              {!sidebarCollapsed && <span>Restore Keys</span>}
             </button>
 
             <button
@@ -1206,31 +1246,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 padding: '0.65rem 0.8rem',
                 borderRadius: '8px',
                 fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer'
+                textAlign: sidebarCollapsed ? 'center' : 'left',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
+              title="Reset History"
             >
-              <History size={16} />
-              Reset History
+              <History size={16} style={{ flexShrink: 0 }} />
+              {!sidebarCollapsed && <span>Reset History</span>}
             </button>
           </nav>
         </div>
 
         <div>
           {/* Health connection latency */}
-          <div className="flex items-center gap-2" style={{ padding: '0.5rem 0.75rem', backgroundColor: '#f1f5f9', borderRadius: '6px', marginBottom: '0.75rem', fontSize: '0.75rem' }}>
-            <Activity size={14} className={latency !== null ? 'text-emerald-500' : 'text-rose-500'} />
-            <span style={{ fontWeight: 600 }}>
-              {latency !== null ? `DB Ping: ${latency}ms` : 'DB Offline'}
-            </span>
+          <div 
+            className="flex items-center gap-2" 
+            style={{ 
+              padding: '0.5rem 0.75rem', 
+              backgroundColor: '#f1f5f9', 
+              borderRadius: '6px', 
+              marginBottom: '0.75rem', 
+              fontSize: '0.75rem',
+              justifyContent: sidebarCollapsed ? 'center' : 'flex-start' 
+            }}
+            title={latency !== null ? `DB Ping: ${latency}ms` : 'DB Offline'}
+          >
+            <Activity size={14} className={latency !== null ? 'text-emerald-500' : 'text-rose-500'} style={{ flexShrink: 0 }} />
+            {!sidebarCollapsed && (
+              <span style={{ fontWeight: 600 }}>
+                {latency !== null ? `DB Ping: ${latency}ms` : 'DB Offline'}
+              </span>
+            )}
           </div>
 
-          <div style={{ padding: '0.75rem 0', borderTop: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-            <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session.username}</p>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-              {session.isPatrikUser ? 'Super Admin' : 'Admin'}
-            </p>
-          </div>
+          {!sidebarCollapsed && (
+            <div style={{ padding: '0.75rem 0', borderTop: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+              <p style={{ color: 'var(--text-primary)', fontWeight: 600, margin: 0 }}>{session.username}</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', margin: 0 }}>
+                {session.isPatrikUser ? 'Super Admin' : 'Admin'}
+              </p>
+            </div>
+          )}
           <button
             onClick={() => {
               removeSession();
@@ -1242,11 +1300,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               borderRadius: '8px',
               cursor: 'pointer',
               justifyContent: 'center',
-              fontSize: '0.85rem'
+              fontSize: '0.85rem',
+              marginTop: sidebarCollapsed ? '0.5rem' : '0'
             }}
+            title="Log Out"
           >
-            <LogOut size={14} />
-            Log Out
+            <LogOut size={14} style={{ flexShrink: 0 }} />
+            {!sidebarCollapsed && <span>Log Out</span>}
           </button>
         </div>
       </aside>
