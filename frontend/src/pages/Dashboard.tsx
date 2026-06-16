@@ -5,6 +5,7 @@ import {
   flexRender, 
   createColumnHelper,
   getSortedRowModel,
+  getPaginationRowModel,
   type SortingState
 } from '@tanstack/react-table';
 import { 
@@ -1018,6 +1019,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 50
+      }
+    }
   });
 
   // Calculate stats
@@ -1570,7 +1577,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               alignItems: 'start',
               flex: 1
             }}>
-              <div className="table-container" style={{ margin: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div className="table-container" style={{ margin: 0 }}>
                 <table className="data-table">
                   <thead>
                     {table.getHeaderGroups().map(headerGroup => (
@@ -1624,6 +1632,67 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Pagination Controls */}
+              <div className="card flex items-center justify-between" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}>
+                <div className="flex items-center gap-1">
+                  <button 
+                    type="button"
+                    onClick={() => table.setPageIndex(0)}
+                    disabled={!table.getCanPreviousPage()}
+                    className="btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', cursor: table.getCanPreviousPage() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+                  >
+                    {"<<"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                    className="btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', cursor: table.getCanPreviousPage() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+                  >
+                    {"<"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                    className="btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', cursor: table.getCanNextPage() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+                  >
+                    {">"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                    disabled={!table.getCanNextPage()}
+                    className="btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', cursor: table.getCanNextPage() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+                  >
+                    {">>"}
+                  </button>
+                </div>
+                
+                <div style={{ fontWeight: 600 }}>
+                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <span>Show:</span>
+                  <select 
+                    value={table.getState().pagination.pageSize}
+                    onChange={e => table.setPageSize(Number(e.target.value))}
+                    className="form-input"
+                    style={{ width: '80px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
+                  >
+                    {[10, 20, 50, 100, 200].map(pageSize => (
+                      <option key={pageSize} value={pageSize}>{pageSize}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
 
               {/* Selected Customer Details */}
               {selectedRow && (

@@ -151,7 +151,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-premium);
   overflow: auto; /* enable both horizontal and vertical scrolling */
-  max-height: calc(100vh - 360px); /* limit height to enable vertical scrolling within container */
+  max-height: calc(100vh - 295px); /* taller grid, leaving room for pagination card below */
   margin-top: 1.5rem;
 }
 
@@ -165,17 +165,19 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #f1f5f9;
   color: var(--text-primary);
   font-weight: 600;
-  padding: 0.8rem 1rem;
+  padding: 0.4rem 0.6rem; /* reduced row height */
   border-bottom: 2px solid var(--border-color);
   position: sticky; /* keep headers fixed at top during vertical scroll */
   top: 0;
   z-index: 10;
+  white-space: nowrap; /* fit column sizes to value content length without wrapping */
 }
 
 .data-table td {
-  padding: 0.8rem 1rem;
+  padding: 0.4rem 0.6rem; /* reduced row height */
   border-bottom: 1px solid var(--border-color);
   font-size: 0.9rem;
+  white-space: nowrap; /* fit column sizes to value content length without wrapping */
 }
 
 .data-table tbody tr {
