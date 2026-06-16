@@ -6,7 +6,9 @@ import {
   createColumnHelper,
   getSortedRowModel,
   getPaginationRowModel,
-  type SortingState
+  getFilteredRowModel,
+  type SortingState,
+  type ColumnFiltersState
 } from '@tanstack/react-table';
 import { 
   Users, 
@@ -19,6 +21,7 @@ import {
   XCircle, 
   ChevronRight,
   ChevronLeft,
+  Filter,
   MessageSquare,
   Building2,
   Trash2,
@@ -227,6 +230,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
   // Sorting State for Table
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [openFilters, setOpenFilters] = useState<Record<string, boolean>>({});
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1015,10 +1020,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const table = useReactTable({
     data: customerData,
     columns,
-    state: { sorting },
+    state: { sorting, columnFilters },
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: {
       pagination: {
@@ -1584,14 +1591,63 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     {table.getHeaderGroups().map(headerGroup => (
                       <tr key={headerGroup.id}>
                         {headerGroup.headers.map(header => (
-                          <th key={header.id} onClick={header.column.getToggleSortingHandler()} style={{ cursor: 'pointer' }}>
-                            <div className="flex items-center gap-1">
-                              {flexRender(header.column.columnDef.header, header.getContext())}
-                              {{
-                                asc: ' 🔼',
-                                desc: ' 🔽',
-                              }[header.column.getIsSorted() as string] ?? null}
+                          <th key={header.id} style={{ position: 'relative', verticalAlign: 'top', paddingBottom: openFilters[header.id] ? '0.5rem' : '0.4rem' }}>
+                            <div className="flex items-center justify-between gap-2 w-full">
+                              <div 
+                                className="flex items-center gap-1 cursor-pointer select-none" 
+                                onClick={header.column.getToggleSortingHandler()}
+                                style={{ flex: 1 }}
+                              >
+                                {flexRender(header.column.columnDef.header, header.getContext())}
+                                {{
+                                  asc: ' 🔼',
+                                  desc: ' 🔽',
+                                }[header.column.getIsSorted() as string] ?? null}
+                              </div>
+                              
+                              {/* Filter Toggle Button at Top Right */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenFilters(prev => ({ ...prev, [header.id]: !prev[header.id] }));
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px',
+                                  color: header.column.getFilterValue() ? 'var(--accent-blue)' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  flexShrink: 0
+                                }}
+                                title="Toggle Column Filter"
+                              >
+                                <Filter size={12} />
+                              </button>
                             </div>
+
+                            {/* Collapsible Filter Input Box */}
+                            {openFilters[header.id] && (
+                              <div style={{ marginTop: '0.3rem' }} onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value={(header.column.getFilterValue() ?? '') as string}
+                                  onChange={e => header.column.setFilterValue(e.target.value || undefined)}
+                                  placeholder={`Filter...`}
+                                  className="form-input"
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    padding: '0.2rem 0.4rem',
+                                    height: '24px',
+                                    width: '100%',
+                                    backgroundColor: '#ffffff'
+                                  }}
+                                  autoFocus
+                                />
+                              </div>
+                            )}
                           </th>
                         ))}
                       </tr>

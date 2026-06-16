@@ -151,7 +151,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-premium);
   overflow: auto; /* enable both horizontal and vertical scrolling */
-  max-height: calc(100vh - 295px); /* taller grid, leaving room for pagination card below */
+  max-height: 900px; /* 3x increased height to fit more rows vertically before scrolling */
   margin-top: 1.5rem;
 }
 
