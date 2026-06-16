@@ -73,7 +73,13 @@ c.CD_HARDWARESERIALNO, c.CD_MACADDRESS, c.CD_PRODUCTKEY, c.CD_TRANSFER, c.CD_DAT
 (SELECT CASE WHEN SUM(SD_DAYS) IS NULL THEN 0 ELSE SUM(SD_DAYS) END FROM [dbo].[SubscriptionDetails] WHERE SD_SM_ID = s.SM_ID) SDDAYS,
 s.SM_EXPORTEDON SM_RESETON,
 (CASE WHEN ISNULL(s.SM_IGNOREPARENT,0) = 0 THEN 'Parent Days Left will be Included' ELSE 'Parent Days Left will be Ignored' END) SM_IGNOREPARENT, 
-c.CD_REMARKS USER_STATUS, (SELECT '') COMMENTS, (SELECT '') UPGRADED_SERIALNO, s.SM_APPLICATION,
+c.CD_REMARKS USER_STATUS, (SELECT '') COMMENTS, COALESCE(
+    (SELECT TOP 1 target.SM_SERIALNO FROM [dbo].[SERIALKEYMASTERLINK] l INNER JOIN [dbo].[SerialKeyMaster] target ON l.SM_ID_NEW = target.SM_ID WHERE l.SM_ID_OLD = s.SM_ID),
+    (SELECT TOP 1 target.SM_SERIALNO FROM [dbo].[SERIALKEYMASTERLINK] l INNER JOIN [dbo].[SerialKeyMaster] target ON l.SM_ID_NEW3 = target.SM_ID WHERE l.SM_ID_NEW = s.SM_ID),
+    (SELECT TOP 1 target.SM_SERIALNO FROM [dbo].[SERIALKEYMASTERLINK] l INNER JOIN [dbo].[SerialKeyMaster] target ON l.SM_ID_NEW4 = target.SM_ID WHERE l.SM_ID_NEW3 = s.SM_ID),
+    (SELECT TOP 1 target.SM_SERIALNO FROM [dbo].[SERIALKEYMASTERLINK] l INNER JOIN [dbo].[SerialKeyMaster] target ON l.SM_ID_NEW5 = target.SM_ID WHERE l.SM_ID_NEW4 = s.SM_ID),
+    ''
+) AS UPGRADED_SERIALNO, s.SM_APPLICATION,
 (SELECT CASE WHEN count(SML_ID) = 0 THEN 'false' ELSE 'true' END FROM [dbo].[SerialKeyMasterLatest] where SML_SM_ID = s.SM_ID) SM_LATEST,
 (SELECT MIN(CD_DATE) FROM [dbo].[CustomerDetail] WHERE CD_SERIAL_ID = s.SM_ID) MINDATE,
 (SELECT MAX(CD_DATE) FROM [dbo].[CustomerDetail] WHERE CD_SERIAL_ID = s.SM_ID) AS MAXDATE,
@@ -198,6 +204,16 @@ FROM [dbo].[CustomerDetail] c RIGHT JOIN [dbo].[SerialKeyMaster] s ON s.SM_ID = 
                 {
                     conditions.Add("(" + string.Join(" OR ", versionConditions) + ")");
                 }
+            }
+
+            // 10. Expiry Condition Filter
+            if (criteria.ExpiryCondition == 1)
+            {
+                conditions.Add("[dokum_msa].udfGetDAYSLEFT(s.SM_SERIALNO) >= 0 AND [dokum_msa].udfGetDAYSLEFT(s.SM_SERIALNO) <= 30");
+            }
+            else if (criteria.ExpiryCondition == 2)
+            {
+                conditions.Add("[dokum_msa].udfGetDAYSLEFT(s.SM_SERIALNO) >= 0 AND [dokum_msa].udfGetDAYSLEFT(s.SM_SERIALNO) <= 60");
             }
 
             if (conditions.Count > 0)
@@ -422,11 +438,96 @@ FROM [dbo].[CustomerDetail] c RIGHT JOIN [dbo].[SerialKeyMaster] s ON s.SM_ID = 
                 return StatusCode(500, new { message = "Failed to insert comment.", details = ex.Message });
             }
         }
+
+        [HttpPost("save-detail")]
+        public async Task<IActionResult> SaveDetail([FromBody] SaveCustomerDetailRequest request)
+        {
+            try
+            {
+                using var connection = new SqlConnection(GetConnectionString());
+                string remarks = request.CD_REMARKS ?? request.USER_STATUS ?? string.Empty;
+
+                if (request.CD_ID.HasValue && request.CD_ID.Value > 0)
+                {
+                    // UPDATE
+                    string sql = @"
+                        UPDATE [dbo].[CustomerDetail] 
+                        SET CD_USERNAME = @CD_USERNAME,
+                            CD_COMPANYNAME = @CD_COMPANYNAME,
+                            CD_EMAIL = @CD_EMAIL,
+                            CD_PHONENO = @CD_PHONENO,
+                            CD_ADDRESS = @CD_ADDRESS,
+                            CD_REMARKS = @CD_REMARKS
+                        WHERE CD_ID = @CD_ID";
+                    
+                    await connection.ExecuteAsync(sql, new {
+                        request.CD_USERNAME,
+                        request.CD_COMPANYNAME,
+                        request.CD_EMAIL,
+                        request.CD_PHONENO,
+                        request.CD_ADDRESS,
+                        CD_REMARKS = remarks,
+                        CD_ID = request.CD_ID.Value
+                    });
+
+                    return Ok(new { message = "Customer details updated successfully.", cdId = request.CD_ID.Value });
+                }
+                else
+                {
+                    // INSERT
+                    // Get application code from SerialKeyMaster to fill CD_APPLICATION
+                    string appCode = await connection.ExecuteScalarAsync<string>(
+                        "SELECT SM_APPLICATION FROM [dbo].[SerialKeyMaster] WHERE SM_ID = @SM_ID",
+                        new { request.SM_ID }
+                    ) ?? string.Empty;
+
+                    string sql = @"
+                        INSERT INTO [dbo].[CustomerDetail] (
+                            CD_USERNAME, CD_COMPANYNAME, CD_EMAIL, CD_PHONENO, CD_ADDRESS, CD_REMARKS, 
+                            CD_SERIAL_ID, CD_APPLICATION, CD_DATE
+                        ) VALUES (
+                            @CD_USERNAME, @CD_COMPANYNAME, @CD_EMAIL, @CD_PHONENO, @CD_ADDRESS, @CD_REMARKS, 
+                            @SM_ID, @CD_APPLICATION, GETDATE()
+                        );
+                        SELECT CAST(SCOPE_IDENTITY() as int);";
+
+                    int newCdId = await connection.QuerySingleAsync<int>(sql, new {
+                        request.CD_USERNAME,
+                        request.CD_COMPANYNAME,
+                        request.CD_EMAIL,
+                        request.CD_PHONENO,
+                        request.CD_ADDRESS,
+                        CD_REMARKS = remarks,
+                        request.SM_ID,
+                        CD_APPLICATION = appCode
+                    });
+
+                    return Ok(new { message = "Customer details inserted successfully.", cdId = newCdId });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to save customer details.", details = ex.Message });
+            }
+        }
     }
 
     public class InsertCommentRequest
     {
         public int CustomerDetailId { get; set; }
         public string CommentText { get; set; } = string.Empty;
+    }
+
+    public class SaveCustomerDetailRequest
+    {
+        public int? CD_ID { get; set; }
+        public int SM_ID { get; set; }
+        public string? CD_USERNAME { get; set; }
+        public string? CD_COMPANYNAME { get; set; }
+        public string? CD_EMAIL { get; set; }
+        public string? CD_PHONENO { get; set; }
+        public string? CD_ADDRESS { get; set; }
+        public string? CD_REMARKS { get; set; }
+        public string? USER_STATUS { get; set; }
     }
 }

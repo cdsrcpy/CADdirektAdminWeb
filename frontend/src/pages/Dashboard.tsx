@@ -33,7 +33,8 @@ import {
   ChevronDown,
   Send,
   Sparkles,
-  Sliders
+  Sliders,
+  Eye
 } from 'lucide-react';
 import { getAuthHeaders, removeSession, type UserSession } from '../utils/auth';
 
@@ -69,6 +70,11 @@ interface CustomerRow {
   sm_IGNOREPARENT: string;
   user_STATUS: string | null;
   comments: string | null;
+  upgraded: number | null;
+  upgraded2xy: number | null;
+  upgraded3xy: number | null;
+  upgraded4xy: number | null;
+  upgraded5xy: number | null;
   upgraded_SERIALNO: string | null;
   sm_APPLICATION: string | null;
   mindate: string | null;
@@ -78,6 +84,7 @@ interface CustomerRow {
   daysleft: number | null;
   expiryDate: string | null;
   sm_INCR: number | null;
+  sm_LATEST: string | null;
 }
 
 interface LinkedLicenseRow {
@@ -183,6 +190,33 @@ export function getVersionCategory(incr: number | null): string {
   return 'Other';
 }
 
+export function getRowTextColor(row: CustomerRow): string {
+  // 1. Upgraded states
+  if (row.upgraded) return '#3b82f6'; // Blue
+  if (row.upgraded2xy) return '#f97316'; // Orange
+  if (row.upgraded3xy) return '#d946ef'; // Magenta
+  if (row.upgraded4xy) return '#0d9488'; // Dark Cyan / Teal
+  if (row.upgraded5xy) return '#a855f7'; // Purple
+
+  // 2. Exported state
+  if (row.sm_ISUSED && row.sm_ISUSED.toLowerCase() === 'exported') {
+    return '#10b981'; // Green
+  }
+
+  // 3. Expired state
+  if (row.daysleft !== null && row.daysleft !== undefined && row.daysleft <= 0) {
+    return '#ef4444'; // Red
+  }
+
+  // 4. Registered state
+  if (row.cd_PRODUCTKEY) {
+    return '#ef4444'; // Red
+  }
+
+  // 5. Unregistered state
+  return 'var(--text-primary)'; // default theme text color
+}
+
 export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'customers' | 'tree' | 'resellers' | 'restore' | 'deleted'>('customers');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -208,6 +242,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
   // Simplified View state
   const [simplifiedView, setSimplifiedView] = useState(false);
+  const [expiryCondition, setExpiryCondition] = useState<number>(0); // 0 = All, 1 = Expiring in 1 Month, 2 = Expiring in 2 Months
+  
+  // Column Visibility States
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
+  const columnDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Double-Click Grid Remarks States
+  const [editingSmTextRowId, setEditingSmTextRowId] = useState<number | null>(null);
+  const [editingSmTextValue, setEditingSmTextValue] = useState<string>('');
+
+  // Editable Contact Details States
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [editForm, setEditForm] = useState({
+    cd_USERNAME: '',
+    cd_COMPANYNAME: '',
+    cd_EMAIL: '',
+    cd_PHONENO: '',
+    cd_ADDRESS: '',
+    user_STATUS: ''
+  });
 
   // AI Search Assistant States
   const [aiPrompt, setAiPrompt] = useState('');
@@ -302,6 +357,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       if (versionDropdownRef.current && !versionDropdownRef.current.contains(event.target as Node)) {
         setVersionDropdownOpen(false);
       }
+      if (columnDropdownRef.current && !columnDropdownRef.current.contains(event.target as Node)) {
+        setColumnDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -363,7 +421,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
           hideTrial,
           searchText: searchText || null,
           versions: selectedVersions.length > 0 ? selectedVersions : null,
-          limit: limit || null
+          limit: limit || null,
+          expiryCondition
         })
       });
       if (response.status === 401) {
@@ -398,7 +457,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
           products: selectedProducts.length > 0 ? selectedProducts : null,
           hideTrial,
           searchText: searchText || null,
-          versions: selectedVersions.length > 0 ? selectedVersions : null
+          versions: selectedVersions.length > 0 ? selectedVersions : null,
+          expiryCondition
         })
       });
       if (!response.ok) throw new Error('Excel export failed');
@@ -648,7 +708,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       });
       if (res.ok) {
         setSelectedRow({ ...selectedRow, sm_TEXT: remarks });
-        handleSearch();
+        setCustomerData(prev => prev.map(row => row.sm_ID === selectedRow.sm_ID ? { ...row, sm_TEXT: remarks } : row));
       }
     } catch (err) {
       console.error(err);
@@ -656,6 +716,101 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       setSubmittingAction(false);
     }
   };
+
+  // Save Remarks Inline from Main Grid Double-click
+  const handleSaveSmTextInline = async (serialNo: string, smId: number, newValue: string) => {
+    setEditingSmTextRowId(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/license/update-text`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ serialNo, text: newValue })
+      });
+      if (res.ok) {
+        setCustomerData(prev => prev.map(row => row.sm_ID === smId ? { ...row, sm_TEXT: newValue } : row));
+        if (selectedRow && selectedRow.sm_ID === smId) {
+          setSelectedRow({ ...selectedRow, sm_TEXT: newValue });
+        }
+      } else {
+        alert('Failed to save remarks');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error saving remarks');
+    }
+  };
+
+  // Save editable customer details from Details Dialog modal
+  const handleSaveDetails = async () => {
+    if (!selectedRow) return;
+    setSubmittingAction(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/customer/save-detail`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cd_ID: selectedRow.cd_ID,
+          sm_ID: selectedRow.sm_ID,
+          cd_USERNAME: editForm.cd_USERNAME,
+          cd_COMPANYNAME: editForm.cd_COMPANYNAME,
+          cd_EMAIL: editForm.cd_EMAIL,
+          cd_PHONENO: editForm.cd_PHONENO,
+          cd_ADDRESS: editForm.cd_ADDRESS,
+          user_STATUS: editForm.user_STATUS
+        })
+      });
+      if (!response.ok) throw new Error('Failed to save details');
+      const data = await response.json();
+      
+      const updatedRow = {
+        ...selectedRow,
+        cd_ID: data.cdId,
+        cd_USERNAME: editForm.cd_USERNAME,
+        cd_COMPANYNAME: editForm.cd_COMPANYNAME,
+        cd_EMAIL: editForm.cd_EMAIL,
+        cd_PHONENO: editForm.cd_PHONENO,
+        cd_ADDRESS: editForm.cd_ADDRESS,
+        user_STATUS: editForm.user_STATUS
+      };
+      
+      setSelectedRow(updatedRow);
+      setCustomerData(prev => prev.map(row => row.sm_ID === selectedRow.sm_ID ? updatedRow : row));
+      setIsEditingDetails(false);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save details');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  // Simplified view visibility effect sync
+  useEffect(() => {
+    if (simplifiedView) {
+      setColumnVisibility(prev => ({
+        ...prev,
+        cd_EMAIL: false,
+        cd_VERSION: false,
+        expiryDate: false,
+        reseller_NAME: false,
+        cd_DATE: false,
+        upgraded_SERIALNO: false
+      }));
+    } else {
+      setColumnVisibility(prev => ({
+        ...prev,
+        cd_EMAIL: true,
+        cd_VERSION: true,
+        expiryDate: true,
+        reseller_NAME: true,
+        cd_DATE: true,
+        upgraded_SERIALNO: true
+      }));
+    }
+  }, [simplifiedView]);
 
   // Save Inline subscription modification
   const handleSaveSubInline = async (subId: number) => {
@@ -1006,6 +1161,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     setSelectedProducts([]);
     setSelectedVersions([]);
     setLimit(null);
+    setExpiryCondition(0);
   };
 
   // Reset all layout filters
@@ -1020,7 +1176,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     setSelectedProducts([]);
     setSelectedVersions([]);
     setLimit(null);
+    setExpiryCondition(0);
     setSimplifiedView(false);
+    setColumnVisibility({});
     setColumnFilters([]);
     alert('Search and grid layout filters have been reset to defaults.');
   };
@@ -1119,10 +1277,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   // Table Columns Definition
   const columnHelper = createColumnHelper<CustomerRow>();
   const columns = useMemo(() => {
-    const allCols = [
+    return [
       columnHelper.accessor('sm_SERIALNO', {
         header: 'Serial Key',
-        cell: info => <span className="font-semibold hover:underline" style={{ color: 'var(--accent-blue)', cursor: 'pointer' }}>{info.getValue()}</span>
+        cell: info => {
+          const val = info.getValue();
+          const isLatest = info.row.original.sm_LATEST === 'true';
+          return (
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold hover:underline" style={{ color: 'inherit', cursor: 'pointer' }}>{val}</span>
+              {isLatest && (
+                <span className="badge-latest" title="This is the latest key version">
+                  ✓ Latest
+                </span>
+              )}
+            </div>
+          );
+        }
       }),
       columnHelper.accessor('sm_ISACTIVE', {
         header: 'Status',
@@ -1180,17 +1351,67 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
       columnHelper.accessor('reseller_NAME', {
         header: 'Reseller',
         cell: info => info.getValue() || <span className="text-muted">-</span>
+      }),
+      columnHelper.accessor('cd_DATE', {
+        header: 'Last Sync',
+        cell: info => {
+          const val = info.getValue();
+          return val ? new Date(val).toLocaleString() : <span className="text-muted">-</span>;
+        }
+      }),
+      columnHelper.accessor('upgraded_SERIALNO', {
+        header: 'Upgraded To',
+        cell: info => {
+          const val = info.getValue();
+          return val ? (
+            <span className="badge-upgraded" title={`Upgraded to key: ${val}`}>
+              {val}
+            </span>
+          ) : <span className="text-muted">-</span>;
+        }
+      }),
+      columnHelper.accessor('sm_TEXT', {
+        header: 'Remarks (Key)',
+        cell: cellInfo => {
+          const val = cellInfo.getValue();
+          const rowId = cellInfo.row.original.sm_ID;
+          const serialNo = cellInfo.row.original.sm_SERIALNO;
+          const isEditing = editingSmTextRowId === rowId;
+          if (isEditing) {
+            return (
+              <input
+                type="text"
+                className="inline-edit-input"
+                value={editingSmTextValue}
+                onChange={(e) => setEditingSmTextValue(e.target.value)}
+                onBlur={() => handleSaveSmTextInline(serialNo, rowId, editingSmTextValue)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveSmTextInline(serialNo, rowId, editingSmTextValue);
+                  } else if (e.key === 'Escape') {
+                    setEditingSmTextRowId(null);
+                  }
+                }}
+                autoFocus
+              />
+            );
+          }
+          return (
+            <div 
+              onDoubleClick={() => {
+                setEditingSmTextRowId(rowId);
+                setEditingSmTextValue(val || '');
+              }}
+              style={{ cursor: 'double-click', minWidth: '100px', minHeight: '1.2rem' }}
+              title="Double-click to edit remarks inline"
+            >
+              {val || <span className="text-muted" style={{ fontStyle: 'italic', fontSize: '0.75rem' }}>Double-click to add...</span>}
+            </div>
+          );
+        }
       })
     ];
-
-    if (simplifiedView) {
-      return allCols.filter(col => {
-        const id = col.id || (col as any).accessorKey;
-        return !['cd_EMAIL', 'cd_VERSION', 'expiryDate', 'reseller_NAME'].includes(id);
-      });
-    }
-    return allCols;
-  }, [simplifiedView, resellers]);
+  }, [editingSmTextRowId, editingSmTextValue]);
 
   const filteredCustomerData = useMemo(() => {
     if (selectedVersions.length === 0) {
@@ -1207,9 +1428,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const table = useReactTable({
     data: filteredCustomerData,
     columns,
-    state: { sorting, columnFilters },
+    state: { sorting, columnFilters, columnVisibility },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -1297,7 +1519,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     !!searchText ||
     selectedProducts.length > 0 ||
     selectedVersions.length > 0 ||
-    limit !== null;
+    limit !== null ||
+    expiryCondition !== 0;
 
   return (
     <div className="layout-container" style={{ gridTemplateColumns: sidebarCollapsed ? '70px 1fr' : '240px 1fr', transition: 'grid-template-columns 0.3s ease' }}>
@@ -1568,6 +1791,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                   <Sliders size={16} />
                   Filters {hasActiveFilters && `(Active)`}
                 </button>
+                {/* Column Visibility Control */}
+                <div style={{ position: 'relative' }} ref={columnDropdownRef}>
+                  <button 
+                    onClick={() => setColumnDropdownOpen(!columnDropdownOpen)} 
+                    className="btn-secondary flex items-center gap-1" 
+                    style={{ fontSize: '0.85rem' }}
+                  >
+                    <Eye size={16} />
+                    Columns
+                  </button>
+                  {columnDropdownOpen && (
+                    <div className="columns-dropdown-card">
+                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-primary)', marginBottom: '0.2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.2rem' }}>
+                        Toggle Columns
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '250px', overflowY: 'auto' }}>
+                        {table.getAllLeafColumns().map(column => {
+                          if (column.id === 'sm_SERIALNO') return null;
+                          return (
+                            <label key={column.id} className="flex items-center gap-2 cursor-pointer font-medium" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              <input
+                                type="checkbox"
+                                checked={column.getIsVisible()}
+                                onChange={column.getToggleVisibilityHandler()}
+                              />
+                              {column.columnDef.header as string}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button onClick={() => setShowEmailsModal(true)} className="btn-secondary flex items-center gap-1" style={{ fontSize: '0.85rem' }}>
                   <Clipboard size={16} />
                   Copy Emails
@@ -1653,6 +1909,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                       <option value={-1}>All Types</option>
                       <option value={1}>Perpetual</option>
                       <option value={0}>Subscription</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>Expiry Condition</label>
+                    <select className="form-input" value={expiryCondition} onChange={e => setExpiryCondition(Number(e.target.value))}>
+                      <option value={0}>All Keys</option>
+                      <option value={1}>Expiring in 1 Month</option>
+                      <option value={2}>Expiring in 2 Months</option>
                     </select>
                   </div>
 
@@ -2097,6 +2362,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                       </span>
                     )}
 
+                    {/* Expiry Condition */}
+                    {expiryCondition === 1 && (
+                      <span className="filter-chip">
+                        Expiring in 1 Month
+                        <button onClick={() => setExpiryCondition(0)}>✕</button>
+                      </span>
+                    )}
+                    {expiryCondition === 2 && (
+                      <span className="filter-chip">
+                        Expiring in 2 Months
+                        <button onClick={() => setExpiryCondition(0)}>✕</button>
+                      </span>
+                    )}
+
                     {/* Clear All Button */}
                     <button 
                       onClick={handleResetFiltersSilently}
@@ -2208,7 +2487,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                           style={{
                             cursor: 'pointer',
                             backgroundColor: selectedRow?.sm_ID === row.original.sm_ID ? 'rgba(6, 115, 186, 0.08)' : 'transparent',
-                            borderLeft: selectedRow?.sm_ID === row.original.sm_ID ? '4px solid var(--accent-blue)' : 'none'
+                            borderLeft: selectedRow?.sm_ID === row.original.sm_ID ? '4px solid var(--accent-blue)' : 'none',
+                            color: getRowTextColor(row.original),
+                            textDecoration: (row.original.sm_ISACTIVE !== 'Active' && row.original.sm_ISACTIVE !== 'Test') ? 'line-through' : 'none'
                           }}
                         >
                           {row.getVisibleCells().map(cell => (
@@ -2330,23 +2611,132 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
 
                   {/* Customer Contact */}
                   <div style={{ fontSize: '0.8rem' }}>
-                    <h5 style={{ fontSize: '0.85rem', marginBottom: '0.3rem', borderLeft: '3px solid var(--accent-blue)', paddingLeft: '0.4rem' }}>Contact Info</h5>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                      <p><strong>User:</strong> {selectedRow.cd_USERNAME || '-'}</p>
-                      <p><strong>Company:</strong> {selectedRow.cd_COMPANYNAME || '-'}</p>
-                      <p><strong>Email:</strong> {selectedRow.cd_EMAIL || '-'}</p>
-                      <p><strong>Phone:</strong> {selectedRow.cd_PHONENO || '-'}</p>
+                    <div className="flex justify-between items-center" style={{ marginBottom: '0.3rem' }}>
+                      <h5 style={{ fontSize: '0.85rem', margin: 0, borderLeft: '3px solid var(--accent-blue)', paddingLeft: '0.4rem' }}>Contact Info</h5>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          if (isEditingDetails) {
+                            setIsEditingDetails(false);
+                            setEditForm({
+                              cd_USERNAME: selectedRow.cd_USERNAME || '',
+                              cd_COMPANYNAME: selectedRow.cd_COMPANYNAME || '',
+                              cd_EMAIL: selectedRow.cd_EMAIL || '',
+                              cd_PHONENO: selectedRow.cd_PHONENO || '',
+                              cd_ADDRESS: selectedRow.cd_ADDRESS || '',
+                              user_STATUS: selectedRow.user_STATUS || ''
+                            });
+                          } else {
+                            setIsEditingDetails(true);
+                          }
+                        }} 
+                        className="btn-secondary" 
+                        style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                      >
+                        {isEditingDetails ? 'Cancel' : 'Edit Contact'}
+                      </button>
                     </div>
+                    {isEditingDetails ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: '#f8fafc', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                          <div>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>User Name</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={editForm.cd_USERNAME} 
+                              onChange={e => setEditForm(prev => ({ ...prev, cd_USERNAME: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>Company</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={editForm.cd_COMPANYNAME} 
+                              onChange={e => setEditForm(prev => ({ ...prev, cd_COMPANYNAME: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>Email</label>
+                            <input 
+                              type="email" 
+                              className="form-input" 
+                              value={editForm.cd_EMAIL} 
+                              onChange={e => setEditForm(prev => ({ ...prev, cd_EMAIL: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>Phone</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={editForm.cd_PHONENO} 
+                              onChange={e => setEditForm(prev => ({ ...prev, cd_PHONENO: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                            />
+                          </div>
+                          <div style={{ gridColumn: 'span 2' }}>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>Address</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={editForm.cd_ADDRESS} 
+                              onChange={e => setEditForm(prev => ({ ...prev, cd_ADDRESS: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                            />
+                          </div>
+                          <div style={{ gridColumn: 'span 2' }}>
+                            <label style={{ fontSize: '0.65rem', fontWeight: 600 }}>Customer Remarks (USER_STATUS)</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={editForm.user_STATUS} 
+                              onChange={e => setEditForm(prev => ({ ...prev, user_STATUS: e.target.value }))}
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                              placeholder="e.g. not part of the company"
+                            />
+                          </div>
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={handleSaveDetails} 
+                          className="btn-primary" 
+                          style={{ padding: '0.3rem', fontSize: '0.75rem', justifyContent: 'center' }}
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', backgroundColor: 'var(--bg-primary)', padding: '0.5rem', borderRadius: '6px' }}>
+                        <p><strong>User:</strong> {selectedRow.cd_USERNAME || '-'}</p>
+                        <p><strong>Company:</strong> {selectedRow.cd_COMPANYNAME || '-'}</p>
+                        <p><strong>Email:</strong> {selectedRow.cd_EMAIL || '-'}</p>
+                        <p><strong>Phone:</strong> {selectedRow.cd_PHONENO || '-'}</p>
+                        <p style={{ gridColumn: 'span 2' }}><strong>Address:</strong> {selectedRow.cd_ADDRESS || '-'}</p>
+                        <p style={{ gridColumn: 'span 2' }}><strong>Cust Remarks (Status):</strong> {selectedRow.user_STATUS || '-'}</p>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Hardware */}
+                  {/* Hardware & Version Metadata */}
                   <div style={{ fontSize: '0.8rem' }}>
-                    <h5 style={{ fontSize: '0.85rem', marginBottom: '0.3rem', borderLeft: '3px solid var(--accent-blue)', paddingLeft: '0.4rem' }}>Hardware</h5>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                    <h5 style={{ fontSize: '0.85rem', marginBottom: '0.3rem', borderLeft: '3px solid var(--accent-blue)', paddingLeft: '0.4rem' }}>Hardware & Metadata</h5>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', backgroundColor: 'var(--bg-primary)', padding: '0.5rem', borderRadius: '6px' }}>
                       <p><strong>MAC:</strong> {selectedRow.cd_MACADDRESS || '-'}</p>
                       <p><strong>HW Serial:</strong> {selectedRow.cd_HARDWARESERIALNO || '-'}</p>
                       <p><strong>Product Key:</strong> {selectedRow.cd_PRODUCTKEY || '-'}</p>
                       <p><strong>Is Used:</strong> {selectedRow.sm_ISUSED}</p>
+                      <p><strong>Last Sync Date:</strong> {selectedRow.cd_DATE ? new Date(selectedRow.cd_DATE).toLocaleString() : '-'}</p>
+                      <p><strong>Upgraded Key:</strong> {selectedRow.upgraded_SERIALNO ? (
+                        <span className="badge-upgraded">{selectedRow.upgraded_SERIALNO}</span>
+                      ) : 'None'}</p>
+                      <p style={{ gridColumn: 'span 2' }}><strong>Latest Key Version:</strong> {selectedRow.sm_LATEST === 'true' ? (
+                        <span className="badge-latest">✓ Latest Key Version</span>
+                      ) : 'No (Key Upgraded)'}</p>
                     </div>
                   </div>
 

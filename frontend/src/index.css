@@ -313,3 +313,66 @@ h1, h2, h3, h4, h5, h6 {
   background-color: rgba(6, 115, 186, 0.15);
 }
 
+/* Premium Enhancements CSS */
+.badge-latest {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--status-active);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.badge-upgraded {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: var(--status-warning);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
+
+.inline-edit-input {
+  width: 100%;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  border: 1.5px solid var(--accent-blue);
+  border-radius: 4px;
+  outline: none;
+  background-color: #f8fafc;
+  box-shadow: 0 0 0 3px rgba(6, 115, 186, 0.1);
+}
+
+.columns-dropdown-card {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-premium);
+  z-index: 300;
+  padding: 0.75rem;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 6px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+

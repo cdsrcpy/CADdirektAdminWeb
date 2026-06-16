@@ -11,6 +11,8 @@ namespace CADdirektAdmin.API.Models
         public int? UPGRADED { get; set; }
         public int? UPGRADED2xy { get; set; }
         public int? UPGRADED3xy { get; set; }
+        public int? UPGRADED4xy { get; set; }
+        public int? UPGRADED5xy { get; set; }
         public string SM_ISACTIVE { get; set; } = string.Empty;
         public int SM_TOTALDAYS { get; set; }
         public string SM_ISPERPETUAL { get; set; } = string.Empty;
@@ -43,6 +45,7 @@ namespace CADdirektAdmin.API.Models
         public int? DAYSLEFT { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public int? SM_INCR { get; set; }
+        public string? SM_LATEST { get; set; }
     }
 
     public class CustomerSearchCriteria
@@ -60,5 +63,6 @@ namespace CADdirektAdmin.API.Models
         public string? SearchText { get; set; }
         public string[]? Versions { get; set; }
         public int? Limit { get; set; } // Row limit
+        public int ExpiryCondition { get; set; } = 0; // 0 = All, 1 = Expiring in 1 Month, 2 = Expiring in 2 Months
     }
 }

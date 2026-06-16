@@ -609,15 +609,15 @@ namespace CADdirektAdmin.API.Controllers
 
                 if (request.TargetVersion == "5.x.y")
                 {
-                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, 6, CHARINDEX('-', s.SM_SERIALNO)-6)) > 5000 ORDER BY s.SM_SERIALNO";
+                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, CASE WHEN SUBSTRING(s.SM_SERIALNO, 1, 2) IN ('Sv', 'CD', 'SC') THEN 11 ELSE 6 END, 4)) > 5000 ORDER BY s.SM_SERIALNO";
                 }
                 else if (request.TargetVersion == "4.x.y")
                 {
-                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, 6, CHARINDEX('-', s.SM_SERIALNO)-6)) > 4000 ORDER BY s.SM_SERIALNO";
+                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, CASE WHEN SUBSTRING(s.SM_SERIALNO, 1, 2) IN ('Sv', 'CD', 'SC') THEN 11 ELSE 6 END, 4)) > 4000 ORDER BY s.SM_SERIALNO";
                 }
                 else
                 {
-                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, 6, CHARINDEX('-', s.SM_SERIALNO)-6)) > 3000 ORDER BY s.SM_SERIALNO";
+                    selectSql += " AND CONVERT(INT, SUBSTRING(s.SM_SERIALNO, CASE WHEN SUBSTRING(s.SM_SERIALNO, 1, 2) IN ('Sv', 'CD', 'SC') THEN 11 ELSE 6 END, 4)) > 3000 ORDER BY s.SM_SERIALNO";
                 }
 
                 var targetRow = await connection.QueryFirstOrDefaultAsync<dynamic>(selectSql, new { App = targetApp });
