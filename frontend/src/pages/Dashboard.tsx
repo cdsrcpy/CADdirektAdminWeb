@@ -32,7 +32,8 @@ import {
   ArrowLeft,
   ChevronDown,
   Send,
-  Sparkles
+  Sparkles,
+  Sliders
 } from 'lucide-react';
 import { getAuthHeaders, removeSession, type UserSession } from '../utils/auth';
 
@@ -215,6 +216,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [limit, setLimit] = useState<number | null>(null);
+  const [showFiltersDrawer, setShowFiltersDrawer] = useState(false);
 
   // Data States
   const [customerData, setCustomerData] = useState<CustomerRow[]>([]);
@@ -972,6 +974,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     alert('Aggregated email list copied to clipboard!');
   };
 
+  // Product Code to Name Map for active chips
+  const PRODUCT_NAMES: Record<string, string> = {
+    '9000': 'BRAND',
+    '6000': 'EL',
+    '5000': 'VVS',
+    '7000': 'TELE',
+    '9500': 'BRAND LT',
+    '6500': 'EL LT',
+    '5500': 'VVS LT',
+    '1200': 'SkalaFormat LT',
+    '1300': 'SkalaFormat LT Upgrade',
+    '1000': 'Svensk översättning',
+    'CDBL': 'BRANDLARM',
+    'CDBS': 'BRANDSKYDD',
+    'SCSB': 'SÄKERHET',
+    'CDVS': 'BBVVS',
+    'CDEP': 'ELPRODUKTION',
+    'CDEL': 'BBEL'
+  };
+
+  // Reset all layout filters silently without alert popups
+  const handleResetFiltersSilently = () => {
+    setRegistered(2);
+    setUpgraded(false);
+    setDeactivated(false);
+    setPerpetual(-1);
+    setWithSmText(-1);
+    setSearchText('');
+    setHideTrial(false);
+    setSelectedProducts([]);
+    setSelectedVersions([]);
+    setLimit(null);
+  };
+
   // Reset all layout filters
   const handleResetLayoutSettings = () => {
     setRegistered(2);
@@ -1251,6 +1287,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
     return Object.entries(filterList);
   }, [session]);
 
+  const hasActiveFilters = 
+    registered !== 2 ||
+    deactivated ||
+    perpetual !== -1 ||
+    withSmText !== -1 ||
+    hideTrial ||
+    upgraded ||
+    !!searchText ||
+    selectedProducts.length > 0 ||
+    selectedVersions.length > 0 ||
+    limit !== null;
+
   return (
     <div className="layout-container" style={{ gridTemplateColumns: sidebarCollapsed ? '70px 1fr' : '240px 1fr', transition: 'grid-template-columns 0.3s ease' }}>
       {/* Sidebar Navigation */}
@@ -1507,6 +1555,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Query, activate, and extend customer software modules</p>
               </div>
               <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowFiltersDrawer(true)} 
+                  className="btn-secondary flex items-center gap-1" 
+                  style={{ 
+                    fontSize: '0.85rem', 
+                    borderColor: hasActiveFilters ? 'var(--accent-blue)' : 'var(--border-color)',
+                    backgroundColor: hasActiveFilters ? 'var(--accent-light)' : '#ffffff',
+                    color: hasActiveFilters ? 'var(--accent-blue)' : 'var(--text-secondary)'
+                  }}
+                >
+                  <Sliders size={16} />
+                  Filters {hasActiveFilters && `(Active)`}
+                </button>
                 <button onClick={() => setShowEmailsModal(true)} className="btn-secondary flex items-center gap-1" style={{ fontSize: '0.85rem' }}>
                   <Clipboard size={16} />
                   Copy Emails
@@ -1517,14 +1578,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               </div>
             </header>
 
-            {/* Filters Dashboard Grid */}
-            <section className="card" style={{ padding: '1.25rem', marginBottom: '1.25rem' }}>
-              <div className="flex gap-6 flex-wrap md:flex-nowrap" style={{ marginBottom: '1rem' }}>
-                {/* Traditional Filters (Left) */}
+            {/* Filters Drawer Backdrop */}
+            {showFiltersDrawer && (
+              <div 
+                className="drawer-backdrop" 
+                onClick={() => setShowFiltersDrawer(false)}
+              />
+            )}
+
+            {/* Sliding Filters Drawer */}
+            <div className={`filters-drawer ${showFiltersDrawer ? 'open' : ''}`}>
+              {/* Drawer Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                borderBottom: '1px solid var(--border-color)',
+                paddingBottom: '0.75rem'
+              }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}>
+                  <Sliders size={18} style={{ color: 'var(--accent-blue)' }} />
+                  Search Filters
+                </h3>
+                <button 
+                  onClick={() => setShowFiltersDrawer(false)} 
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '1.2rem',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '4px',
+                    borderRadius: '4px'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--bg-primary)'}
+                  onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Drawer Content Body Container (with scrollable overflow) */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingRight: '4px' }}>
+                {/* Traditional Filters */}
                 <div className="grid" style={{
-                  flex: '1 1 70%',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: '1rem',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '0.75rem',
                   alignContent: 'start'
                 }}>
                   <div>
@@ -1716,12 +1819,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                   </div>
                 </div>
 
-                {/* AI Search Assistant (Right) */}
+                {/* AI Search Assistant */}
                 <div style={{
-                  flex: '1 1 30%',
-                  minWidth: '280px',
-                  borderLeft: '1px solid var(--border-color)',
-                  paddingLeft: '1.5rem',
+                  borderTop: '1px solid var(--border-color)',
+                  paddingTop: '1rem',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '0.6rem'
@@ -1837,57 +1938,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Extra Layout Filters */}
-              <div className="flex justify-between items-center" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem', fontSize: '0.85rem' }}>
-                <div className="flex gap-4" style={{ alignItems: 'center' }}>
-                  <label className="flex items-center gap-1 cursor-pointer font-semibold">
+                {/* Extra Layout Filters */}
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.55rem', fontSize: '0.8rem' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>Layout Settings</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold">
                     <input type="checkbox" checked={simplifiedView} onChange={e => setSimplifiedView(e.target.checked)} />
                     Simplified View
                   </label>
-                  <label className="flex items-center gap-1 cursor-pointer font-semibold">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold">
                     <input type="checkbox" checked={hideTrial} onChange={e => setHideTrial(e.target.checked)} />
                     Hide Trial Keys
                   </label>
-                  <label className="flex items-center gap-1 cursor-pointer font-semibold">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold">
                     <input type="checkbox" checked={upgraded} onChange={e => setUpgraded(e.target.checked)} />
                     Upgraded Chains Only
                   </label>
-                  {limit && (
-                    <span style={{
-                      backgroundColor: 'var(--accent-blue)',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'default'
-                    }}>
-                      Top {limit} Rows
-                      <span 
-                        onClick={() => setLimit(null)} 
-                        style={{ cursor: 'pointer', fontSize: '0.8rem', marginLeft: '2px', opacity: 0.8 }}
-                        title="Clear Limit"
-                      >
-                        ✕
-                      </span>
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={handleResetLayoutSettings} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
-                    Reset Filters
-                  </button>
-                  <button onClick={handleSearch} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.75rem' }}>
-                    Apply Search
-                  </button>
                 </div>
               </div>
-            </section>
+
+              {/* Drawer Footer Actions */}
+              <div style={{
+                marginTop: 'auto',
+                borderTop: '1px solid var(--border-color)',
+                paddingTop: '1rem',
+                display: 'flex',
+                gap: '0.5rem',
+                justifyContent: 'flex-end',
+                backgroundColor: '#ffffff'
+              }}>
+                <button onClick={handleResetLayoutSettings} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', width: '50%' }}>
+                  Reset Filters
+                </button>
+                <button 
+                  onClick={() => {
+                    handleSearch();
+                    setShowFiltersDrawer(false);
+                  }} 
+                  className="btn-primary" 
+                  style={{ padding: '0.4rem 1rem', fontSize: '0.75rem', width: '50%', justifyContent: 'center' }}
+                >
+                  Apply Search
+                </button>
+              </div>
+            </div>
 
 
 
@@ -1900,6 +1994,131 @@ export const Dashboard: React.FC<DashboardProps> = ({ session, onLogout }) => {
               flex: 1
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* Active Filter Chips (Amazon/Udemy style) */}
+                {hasActiveFilters && (
+                  <div className="filter-chips-container">
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600, marginRight: '0.25rem', fontSize: '0.72rem' }}>Active Filters:</span>
+                    
+                    {/* Status Filter */}
+                    {registered === 1 && (
+                      <span className="filter-chip">
+                        Registered
+                        <button onClick={() => setRegistered(2)}>✕</button>
+                      </span>
+                    )}
+                    {registered === 0 && (
+                      <span className="filter-chip">
+                        Unregistered
+                        <button onClick={() => setRegistered(2)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Include Deactivated */}
+                    {deactivated && (
+                      <span className="filter-chip">
+                        Include Deactivated
+                        <button onClick={() => setDeactivated(false)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Perpetual / Subscription */}
+                    {perpetual === 1 && (
+                      <span className="filter-chip">
+                        Perpetual
+                        <button onClick={() => setPerpetual(-1)}>✕</button>
+                      </span>
+                    )}
+                    {perpetual === 0 && (
+                      <span className="filter-chip">
+                        Subscription
+                        <button onClick={() => setPerpetual(-1)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* withSmText (Comments) */}
+                    {withSmText === 1 && (
+                      <span className="filter-chip">
+                        Has Comments
+                        <button onClick={() => setWithSmText(-1)}>✕</button>
+                      </span>
+                    )}
+                    {withSmText === 0 && (
+                      <span className="filter-chip">
+                        No Comments
+                        <button onClick={() => setWithSmText(-1)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Hide Trial */}
+                    {hideTrial && (
+                      <span className="filter-chip">
+                        Hide Trial
+                        <button onClick={() => setHideTrial(false)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Upgraded Chains */}
+                    {upgraded && (
+                      <span className="filter-chip">
+                        Upgraded Only
+                        <button onClick={() => setUpgraded(false)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Search Text */}
+                    {searchText && (
+                      <span className="filter-chip">
+                        Search: "{searchText}"
+                        <button onClick={() => setSearchText('')}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Products */}
+                    {selectedProducts.map(prod => (
+                      <span key={prod} className="filter-chip">
+                        {PRODUCT_NAMES[prod] || prod}
+                        <button onClick={() => setSelectedProducts(prev => prev.filter(p => p !== prod))}>✕</button>
+                      </span>
+                    ))}
+
+                    {/* Versions */}
+                    {selectedVersions.map(ver => (
+                      <span key={ver} className="filter-chip">
+                        Version: {ver}
+                        <button onClick={() => setSelectedVersions(prev => prev.filter(v => v !== ver))}>✕</button>
+                      </span>
+                    ))}
+
+                    {/* Limit */}
+                    {limit !== null && (
+                      <span className="filter-chip">
+                        Top {limit} Rows
+                        <button onClick={() => setLimit(null)}>✕</button>
+                      </span>
+                    )}
+
+                    {/* Clear All Button */}
+                    <button 
+                      onClick={handleResetFiltersSilently}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        color: 'var(--accent-blue)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        marginLeft: 'auto',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.72rem'
+                      }}
+                      onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--accent-light)'}
+                      onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                )}
+
                 <div className="table-container" style={{ margin: 0 }}>
                 <table className="data-table">
                   <thead>
